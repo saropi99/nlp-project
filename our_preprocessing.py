@@ -1,6 +1,8 @@
 from enum import Enum
 import pandas as pd
 import re
+import textblob
+import contractions
 
 import nltk
 from nltk import word_tokenize
@@ -11,28 +13,40 @@ nltk.download('stopwords')
 Stemmer = Enum('Stemmer', 'Porter WordNet')
 
 
-def text_preprocess(text, remove_stopwords=True, stemmer=Stemmer.Porter):
+def text_preprocess(text, remove_stopwords=True, remove_digits=True, stemmer=Stemmer.Porter):
 
     '''
     Steps:
         1. using lowercase
-        2. deleting digits
-        3. deleting double spaces
-        4. removing stopwords (optional: True/False)
-        5. deleting puntcuations
-        6. stemming/lemmatization deploying function stem_text() -> returns result
+        2. removing urls, emails
+        3. removing digits (optional bc of the POS tagging)
+        4. correcting misspellings
+        5. split contractions: can't into cannot, i'm into i am
+        6. removing stopwords (optional: True/False)
+        7. deleting puntcuations
+        8. deleting double spaces
+        9. stemming/lemmatization deploying function stem_text() -> returns result
     '''
 
-    text = text.lower() # convert to lowercase
-    text = re.sub(r'\d+', '', text)  # delete all digits
-    text = re.sub(r'\s+', ' ', text)  # delete double spaces
+    text = text.lower() # just lowercase
+    text = re.sub(r'\S*https?:\S*', '', text) # remove urls
+    text = re.sub(r'\S+@\S+', '', text) # remove emails
+
+    if remove_digits:
+        text = re.sub(r'\d+', '', text)  # remove digits
+
+    corrected_text = textblob.TextBlob(text).correct() # correct misspellings
+    text = contractions.fix(str(corrected_text)) # split contractions
 
     # stemming with stopwords removal
     if remove_stopwords:
+        important_words = {"not", "no", "nor", "cannot"}
         stop_words = set(stopwords.words('english'))
+        stop_words -= important_words
         text = ' '.join([word for word in word_tokenize(text) if word not in stop_words])
 
-    text = re.sub(r'[^\w\s]', '', text)  # remove punctuations but after removing stopwords bc of the stopwords list
+    text = re.sub(r'[^\w\s]', '', text) # delete punctuations (after stopwords removing just in case)
+    text = re.sub(r'\s+', ' ', text)  # delete double spaces
 
     return stem_text(text, stemmer)
 

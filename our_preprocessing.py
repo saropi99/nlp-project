@@ -5,27 +5,29 @@ import textblob
 import contractions
 
 import nltk
-from nltk import word_tokenize
-from nltk.corpus import stopwords
+from nltk import word_tokenize, pos_tag
+from nltk.corpus import stopwords, wordnet
 from nltk.stem import WordNetLemmatizer, PorterStemmer
 
 nltk.download('stopwords')
-Stemmer = Enum('Stemmer', 'Porter WordNet')
+nltk.download('punkt')
+nltk.download('averaged_perceptron_tagger')
 
+Stemmer = Enum('Stemmer', 'Porter WordNet')
 
 def text_preprocess(text, remove_stopwords=True, remove_digits=True, stemmer=Stemmer.Porter):
 
     '''
     Steps:
-        1. using lowercase
-        2. removing urls, emails
+        1. using lowercases
+        2. removing urls, emails from text
         3. removing digits (optional bc of the POS tagging)
         4. correcting misspellings
-        5. split contractions: can't into cannot, i'm into i am
-        6. removing stopwords (optional: True/False)
-        7. deleting puntcuations
-        8. deleting double spaces
-        9. stemming/lemmatization deploying function stem_text() -> returns result
+        5. splitting contractions: can't into cannot, i'm into i am
+        6. stemming / pos + lemmatization using func. stem_text()
+        7. removing stopwords (optional: True/False)
+        8. deleting puntcuations
+        9. deleting double spaces, possible spaces at the beg. and end
     '''
 
     text = text.lower() # just lowercase
@@ -38,7 +40,9 @@ def text_preprocess(text, remove_stopwords=True, remove_digits=True, stemmer=Ste
     corrected_text = textblob.TextBlob(text).correct() # correct misspellings
     text = contractions.fix(str(corrected_text)) # split contractions
 
-    # stemming with stopwords removal
+    text = stem_text(text, stemmer) # stemmer/lemmatizer
+
+    # stopwords removal
     if remove_stopwords:
         important_words = {"not", "no", "nor", "cannot"}
         stop_words = set(stopwords.words('english'))
@@ -46,22 +50,40 @@ def text_preprocess(text, remove_stopwords=True, remove_digits=True, stemmer=Ste
         text = ' '.join([word for word in word_tokenize(text) if word not in stop_words])
 
     text = re.sub(r'[^\w\s]', '', text) # delete punctuations (after stopwords removing just in case)
-    text = re.sub(r'\s+', ' ', text)  # delete double spaces
+    text = re.sub(r'\s+', ' ', text).strip()   # delete double spaces, at the beginning and end
 
-    return stem_text(text, stemmer)
+    return word_tokenize(text)
 
 def stem_text(text, stemmer=Stemmer.Porter):
 
     words = word_tokenize(text)
     clean = []
-    s = WordNetLemmatizer() if stemmer == Stemmer.WordNet else PorterStemmer()
-    for word in words:
-        if stemmer == Stemmer.WordNet:
-            stem = s.lemmatize(word)
-        else:
+
+    if stemmer == Stemmer.WordNet:
+        s = WordNetLemmatizer()
+        pos_tags = pos_tag(words)
+        for word, tag in pos_tags:
+            stem = s.lemmatize(word, get_wordnet_pos(tag))
+            clean.append(stem)
+    else:
+        s = PorterStemmer()
+        for word in words:
             stem = s.stem(word)
-        clean.append(stem)
-    return clean
+            clean.append(stem)
+
+    return ' '.join(clean)
+
+def get_wordnet_pos(tag):
+    if tag.startswith('J'):
+        return wordnet.ADJ  # Adjective
+    elif tag.startswith('V'):
+        return wordnet.VERB  # Verb
+    elif tag.startswith('N'):
+        return wordnet.NOUN  # Noun
+    elif tag.startswith('R'):
+        return wordnet.ADV  # Adverb
+    else:
+        return wordnet.NOUN
 
 def class_distribution(dataset):
     if 'sentiment_label' in dataset.columns:

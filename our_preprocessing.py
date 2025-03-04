@@ -11,7 +11,10 @@ from nltk.stem import WordNetLemmatizer, PorterStemmer
 
 nltk.download('stopwords')
 nltk.download('punkt')
+nltk.download('wordnet')
 nltk.download('averaged_perceptron_tagger')
+nltk.download('averaged_perceptron_tagger_eng')
+
 
 Stemmer = Enum('Stemmer', 'Porter WordNet')
 
@@ -52,7 +55,9 @@ def text_preprocess(text, remove_stopwords=True, remove_digits=True, stemmer=Ste
     text = re.sub(r'[^\w\s]', '', text) # delete punctuations (after stopwords removing just in case)
     text = re.sub(r'\s+', ' ', text).strip()   # delete double spaces, at the beginning and end
 
-    return word_tokenize(text)
+    #uncoment this id you want to return the tokenization
+    # return word_tokenize(text)
+    return text
 
 def stem_text(text, stemmer=Stemmer.Porter):
 

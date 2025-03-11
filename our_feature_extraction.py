@@ -55,8 +55,8 @@ def generate_ngrams(text: str, n: int) -> List[str]:
 class ClassAwareVectorizer:
     def __init__(self, n: int = 1, ohe: bool = False):
         """
-        Class-Aware Vectorizer for Sentiment Analysis.
-        
+        Class-Aware Vectorizer for Sentiment Analysis with Improved Scaling.
+
         Args:
             n (int): N-gram size.
             ohe (bool): If True, uses one-hot encoding weights; otherwise, multiplies by token frequency.
@@ -65,13 +65,13 @@ class ClassAwareVectorizer:
         self.ohe = ohe
         self.vocab = {}
         self.word_weights = {}
-        self.min_weight = 0
-        self.max_weight = 1 
-    
+        self.mean_weight = 0
+        self.max_abs_deviation = 1  # Default values
+
     def fit(self, docs: List[str], labels: List[int]):
         """
         Learns class-aware word weights from the training data.
-        
+
         Args:
             docs (List[str]): Training documents.
             labels (List[int]): Corresponding class labels (0 or 1).
@@ -87,25 +87,24 @@ class ClassAwareVectorizer:
             else:
                 class_1_counts.update(ngrams)
         
-        # Merge vocabularies and compute class-aware weights
+        # Compute class-aware raw weights
         full_vocab = set(class_0_counts.keys()).union(set(class_1_counts.keys()))
-        
-        self.word_weights = {
+        raw_weights = {
             word: (class_1_counts[word] - class_0_counts[word]) / (class_1_counts[word] + class_0_counts[word] + 1e-6) 
             for word in full_vocab
         }
         
-        # Learn min and max values for scaling
-        self.min_weight = min(self.word_weights.values(), default=0)
-        self.max_weight = max(self.word_weights.values(), default=1)
+        # Compute mean and max absolute deviation
+        self.mean_weight = np.mean(list(raw_weights.values()))
+        self.max_abs_deviation = max(abs(w - self.mean_weight) for w in raw_weights.values()) + 1e-6
         
-        # Normalize weights to [0, 1]
+        # Normalize weights to range [0,1] centered at 0.5
         self.word_weights = {
-            word: 0.5 + 0.5 * (weight - self.min_weight) / (self.max_weight - self.min_weight + 1e-6)
-            for word, weight in self.word_weights.items()
+            word: 0.5 + 0.5 * (weight - self.mean_weight) / self.max_abs_deviation
+            for word, weight in raw_weights.items()
         }
         
-
+        # Create vocabulary index
         self.vocab = {word: i for i, word in enumerate(full_vocab)}
         
         return self  # Allows method chaining
@@ -113,14 +112,14 @@ class ClassAwareVectorizer:
     def transform(self, docs: List[str]) -> np.ndarray:
         """
         Transforms input texts into fixed-length vectors.
-        
+
         Args:
             docs (List[str]): List of input documents.
-        
+
         Returns:
             np.ndarray: Transformed feature matrix (num_samples x vocab_size).
         """
-        vectors = np.zeros((len(docs), len(self.vocab)))
+        vectors = np.full((len(docs), len(self.vocab)), 0.5)  # Default to neutral value
 
         for i, doc in enumerate(docs):
             ngrams = generate_ngrams(doc, self.n)
@@ -136,11 +135,11 @@ class ClassAwareVectorizer:
     def fit_transform(self, docs: List[str], labels: List[int]) -> np.ndarray:
         """
         Combines fit and transform.
-        
+
         Args:
             docs (List[str]): Training documents.
             labels (List[int]): Corresponding class labels.
-        
+
         Returns:
             np.ndarray: Transformed feature matrix.
         """

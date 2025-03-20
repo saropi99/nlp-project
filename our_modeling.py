@@ -5,16 +5,13 @@ from sklearn.model_selection import GridSearchCV, train_test_split
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 
-
 def support_vector_machine(x_train_vec, x_val_vec, y_train, y_val):
-    param_grid = {
-    'C': [0.1, 1, 10, 100],
-    'kernel': ['linear', 'rbf', 'poly', 'sigmoid'],
-    'gamma': ['scale', 'auto', 0.01, 0.1, 1]
-    }
-
     svm_model = SVC()
-    # Set up GridSearchCV with cross-validation (cv=5)
+    param_grid = {
+        'C': [0.1, 1, 10, 100],
+        'kernel': ['linear', 'rbf', 'poly', 'sigmoid'],
+        'gamma': ['scale', 'auto', 0.01, 0.1, 1]
+    }
     grid_search = GridSearchCV(svm_model, param_grid, cv=5, scoring='accuracy', n_jobs=-1)
 
     # Fit the model to training data

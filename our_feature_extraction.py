@@ -181,19 +181,3 @@ class ClassAwareVectorizer:
             np.ndarray: Transformed feature matrix.
         """
         return self.fit(docs, labels).transform(docs)
-
-# # Example usage:
-# docs = ["I love this movie", "This movie is terrible", "Amazing acting and plot", "Worst film ever"]
-# labels = [1, 0, 1, 0]  # 1 = Positive, 0 = Negative
-
-# vectorizer = ClassAwareVectorizer(n=1, ohe=False)
-# X_train = vectorizer.fit_transform(docs, labels)
-
-# print("Vocabulary:", vectorizer.vocab)
-# print("Feature Matrix:\n", X_train)
-
-# # Test with new data
-# new_texts = ["Amazing movie and plot", "Terrible terrible film"]
-# X_test = vectorizer.transform(new_texts)
-# print("New Texts Feature Matrix:\n", X_test)
-

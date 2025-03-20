@@ -1,48 +1,66 @@
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 import numpy as np
+from gensim.models import Word2Vec
 
-
-def basic_bag(X_train, X_val, ohe=False, min_refs=None, ngram_range=(1, 1),  debug=False):
-    vectorizer = CountVectorizer(ngram_range=ngram_range, binary=ohe)
+def basic_bag(X_train, X_val, ohe=False, min_refs=None, ngram_range=(1, 1), debug=False):
+    # Initialize CountVectorizer
+    vectorizer = CountVectorizer(ngram_range=ngram_range)
     X_train_vec = vectorizer.fit_transform(X_train)
     if debug:
-        print('Shape (X_train_vec) before reduction: ', X_train_vec.shape)
-    
+        print('Shape (X_train_vec): ', X_train_vec.shape)
+
+    # Sum the word counts and extract vocabulary
     word_counts = np.asarray(X_train_vec.sum(axis=0)).flatten()
     vocab = np.array(vectorizer.get_feature_names_out())
+
     selected_words = []
-    if min_refs:
-        selected_words = vocab[word_counts >= min_refs]
-        vectorizer = CountVectorizer(vocabulary=selected_words)
-        # Re transform training
+    if ohe:
+        if min_refs: # ohe=True, min_refs=True
+            selected_words = vocab[word_counts >= min_refs]
+            vectorizer = CountVectorizer(ngram_range=ngram_range, binary=ohe, vocabulary=selected_words)
+        else: # ohe=True, min_refs=False
+            vectorizer = CountVectorizer(ngram_range=ngram_range, binary=ohe)
         X_train_vec = vectorizer.fit_transform(X_train)
-        if debug:
-            print('Shape (X_train_vec) after reuction: ', X_train_vec.shape)
+    elif min_refs: # ohe=False, min_refs=True
+        selected_words = vocab[word_counts >= min_refs]
+        vectorizer = CountVectorizer(ngram_range=ngram_range, vocabulary=selected_words)
+        X_train_vec = vectorizer.fit_transform(X_train)
+    if debug and selected_words:  # Only print after reduction if filtering happened
+        print('Shape (X_train_vec) after reduction: ', X_train_vec.shape)
     X_val_vec = vectorizer.transform(X_val)
     if debug:
         print('Shape (X_val_vec): ', X_val_vec.shape)
+
     return word_counts, vocab, selected_words, vectorizer, X_train_vec, X_val_vec
 
-def tf_idf(X_train, X_val, ohe=False, min_refs=None, ngram_range=(1, 1), debug=False):
-    vectorizer = TfidfVectorizer(ngram_range=ngram_range, binary=ohe)
-    X_train_vec = vectorizer.fit_transform(X_train)
+
+def tf_idf(X_train, X_val, min_refs=None, ngram_range=(1, 1), debug=False):
+    "TF-IDF Vectorizer"
+    # Initialize CountVectorizer to count word/n-grams
+    vectorizer = CountVectorizer(ngram_range=ngram_range)
+    X_train_count = vectorizer.fit_transform(X_train)
     if debug:
-        print('Shape (X_train_vec) before reduction: ', X_train_vec.shape)
-    
-    word_counts = np.asarray(X_train_vec.sum(axis=0)).flatten()
+        print('Shape (X_train_vec): ', X_train_count.shape)
+
+    # Sum the word counts and extract vocabulary
+    word_counts = np.asarray(X_train_count.sum(axis=0)).flatten()
     vocab = np.array(vectorizer.get_feature_names_out())
+
+    # Filter vocabulary by minimum reference count (if provided)
     selected_words = []
     if min_refs:
         selected_words = vocab[word_counts >= min_refs]
-        vectorizer = CountVectorizer(vocabulary=selected_words)
-        # Re transform training
-        X_train_vec = vectorizer.fit_transform(X_train)
-        if debug:
-            print('Shape (X_train_vec) after reuction: ', X_train_vec.shape)
-    X_val_vec = vectorizer.transform(X_val)
+
+    # TF-IDF
+    tfidf_vectorizer = TfidfVectorizer(ngram_range=ngram_range, vocabulary=selected_words if min_refs else None)
+    X_train_vec = tfidf_vectorizer.fit_transform(X_train)
+    if debug and selected_words:
+        print('Shape (X_train_vec) after reduction: ', X_train_vec.shape)
+    X_val_vec = tfidf_vectorizer.transform(X_val)
     if debug:
         print('Shape (X_val_vec): ', X_val_vec.shape)
-    return word_counts, vocab, selected_words, vectorizer, X_train_vec, X_val_vec
+
+    return word_counts, vocab, selected_words, tfidf_vectorizer, X_train_vec, X_val_vec
 
 from collections import Counter
 from typing import List, Dict, Tuple
@@ -51,6 +69,25 @@ def generate_ngrams(text: str, n: int) -> List[str]:
     """Generate n-grams from a given text."""
     tokens = text.split()  # Simple whitespace tokenizer
     return [' '.join(tokens[i:i+n]) for i in range(len(tokens)-n+1)] if len(tokens) >= n else []
+
+
+def word2vec_embedding(X_train, vector_size=100, window=5, min_count=1, sg=0, file='word2vec.model', debug=False):
+    tokenized_train = [text.split() for text in X_train]
+    if debug:
+        print("Tokenization done.")
+        print("Tokens for training set:", tokenized_train[0])
+
+    model = Word2Vec(sentences=tokenized_train, vector_size=vector_size, window=window, min_count=min_count, sg=sg, workers=4)
+    if debug:
+        print("Model Word2Vec trained.")
+
+    word_vectors = model.wv
+    model.save(file)
+    if debug:
+        print(f"Model saved to {file}.")
+
+    return model, word_vectors
+
 
 class ClassAwareVectorizer:
     def __init__(self, n: int = 1, ohe: bool = False):

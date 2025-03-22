@@ -1,6 +1,8 @@
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 import numpy as np
-from gensim.models import Word2Vec
+from gensim.models import Word2Vec, KeyedVectors
+import multiprocessing
+from gensim.models.phrases import Phrases, Phraser
 
 def basic_bag(X_train, X_val, ohe=False, ngram_range=(1, 1), min_refs=None, debug=False):
     # Initialize CountVectorizer
@@ -70,23 +72,54 @@ def generate_ngrams(text: str, n: int) -> List[str]:
     tokens = text.split()  # Simple whitespace tokenizer
     return [' '.join(tokens[i:i+n]) for i in range(len(tokens)-n+1)] if len(tokens) >= n else []
 
+# Function for Word2vec fine tuning
+def word2vec_alg(X_train, pretrained_path=None, vector_size=100, min_count=1, window=5, sg=False, epochs=30, alpha=0.025, alpha_min=0.0001, save_path=None):
+    """
+    Train a Word2Vec model on the given text, optionally using a pre-trained model.
 
-def word2vec_embedding(X_train, vector_size=100, window=5, min_count=1, sg=0, file='word2vec.model', debug=False):
-    tokenized_train = [text.split() for text in X_train]
-    if debug:
-        print("Tokenization done.")
-        print("Tokens for training set:", tokenized_train[0])
+    Parameters:
+    X_train (list of lists of str): The training data, where each sentence is represented as a list of tokens (words).
+    pretrained_path (str, optional): File path to a pre-trained Word2Vec model. If provided, the model will be fine-tuned.
+    vector_size (int, default=100): The size (dimensionality) of the word vectors.
+    min_count (int, default=1): Minimum frequency count for words to be included in the vocabulary.
+    window (int, default=5): Maximum distance between the current and predicted word within a sentence.
+    sg (bool, default=False): If True, use the Skip-gram model. If False, use the CBOW model.
+    epochs (int, default=30): The number of training iterations (epochs).
+    alpha (float, default=0.025): Initial learning rate for training.
+    alpha_min (float, default=0.0001): Minimum learning rate after training.
+    save_path (str, optional): If provided, the model will be saved at this path.
 
-    model = Word2Vec(sentences=tokenized_train, vector_size=vector_size, window=window, min_count=min_count, sg=sg, workers=4)
-    if debug:
-        print("Model Word2Vec trained.")
+    Returns:
 
-    word_vectors = model.wv
-    model.save(file)
-    if debug:
-        print(f"Model saved to {file}.")
+    model: The trained Word2Vec model.
+    """
 
-    return model, word_vectors
+    X_train_list = list(X_train)
+    phrases = Phrases(X_train_list, min_count=30, progress_per=10000)
+    bigram = Phraser(phrases)
+    sents = bigram[X_train_list]
+    cores = multiprocessing.cpu_count() # check possible cores
+
+    # the Word2Vec model with major parameters
+    model = Word2Vec(vector_size=vector_size, min_count=min_count, window=window, sg=sg, workers=cores, alpha=alpha, min_alpha=alpha_min)
+
+    model.build_vocab(sents, progress_per=10000) # vocabulary from the corpus
+    total_examples = model.corpus_count  # number of examples in the corpus
+
+    # use pretrained Word2Vec model
+    if pretrained_path:
+        pretrained_model = KeyedVectors.load_word2vec_format(pretrained_path, binary=False) # upload pretrained model
+        model.build_vocab([list(pretrained_model.key_to_index.keys())], update=True)  # add words from the pretrained model to the vocabulary
+        model.wv.vectors = pretrained_model.vectors  # set the pretrained word vectors to the new model
+
+        model.wv.locked = False  # False to fine-tune the pretrained vectors
+
+    model.train(sents, total_examples=total_examples, epochs=epochs) # train the model
+
+    if save_path:
+        model.save(save_path)
+
+    return model
 
 
 class ClassAwareVectorizer:

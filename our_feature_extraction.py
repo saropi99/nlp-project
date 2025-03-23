@@ -121,6 +121,31 @@ def word2vec_alg(X_train, pretrained_path=None, vector_size=100, min_count=1, wi
 
     return model
 
+def load_pretrained(path):
+    pretrained_model = KeyedVectors.load_word2vec_format(path, binary=False) # upload pretrained model
+    return pretrained_model
+
+def glove_embedding(X_train, X_val, model, debug=False):
+    def document_vector(doc):
+        """Compute the mean word vector for a single document."""
+        vectors = [model[word] for word in doc if word in model]
+        return np.mean(vectors, axis=0) if vectors else np.zeros(model.vector_size)
+    
+    # Extract vocabulary and word counts
+    vocab = list(model.key_to_index.keys())  # No need for `.wv`
+    word_counts = [sum(1 for word in doc if word in model) for doc in X_train]
+    selected_words = vocab  # All words in model vocabulary
+    
+    # Vectorize documents
+    X_train_vec = np.array([document_vector(doc) for doc in X_train])
+    X_val_vec = np.array([document_vector(doc) for doc in X_val])
+    
+    if debug:
+        print("Shape (X_train_vec):", X_train_vec.shape)
+        print("Shape (X_val_vec):", X_val_vec.shape)
+    
+    return word_counts, vocab, selected_words, document_vector, X_train_vec, X_val_vec
+
 
 class ClassAwareVectorizer:
     def __init__(self, n: int = 1, ohe: bool = False):

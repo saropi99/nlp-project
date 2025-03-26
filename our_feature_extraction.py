@@ -151,25 +151,26 @@ def glove_embedding(X_train, X_val, model, debug=False):
     
     return word_counts, vocab, selected_words, document_vector, X_train_vec, X_val_vec
 
-def bert_embeddings(X_train, X_val, model=bert_model, tokenizer=bert_tokenizer):
-    def get_bert_embeddings(text_list):
-        """Tokenize text and generate averaged BERT embeddings."""
-        model.eval()  # Set the model to evaluation mode
-        embeddings = []
-        
-        with torch.no_grad():  # Disable gradient computation
-            for text in text_list:
-                encoded_input = tokenizer(text, padding=True, return_tensors='pt', truncation=True, max_length=512)
-                output = model(**encoded_input)
-                last_hidden_state = output.last_hidden_state  # Shape: (batch_size, seq_length, hidden_size)
-                avg_embedding = last_hidden_state.mean(dim=1)  # Average over the sequence length dimension
-                embeddings.append(avg_embedding.squeeze().numpy())  # Convert to NumPy array
+def bert_embeddings(text_list, model=bert_model, tokenizer=bert_tokenizer):
+    """Tokenize text and generate averaged BERT embeddings."""
+    model.eval()  # Set the model to evaluation mode
+    embeddings = []
+    
+    with torch.no_grad():  # Disable gradient computation
+        for text in text_list:
+            encoded_input = tokenizer(text, padding=True, return_tensors='pt', truncation=True, max_length=512)
+            output = model(**encoded_input)
+            last_hidden_state = output.last_hidden_state  # Shape: (batch_size, seq_length, hidden_size)
+            avg_embedding = last_hidden_state.mean(dim=1)  # Average over the sequence length dimension
+            embeddings.append(avg_embedding.squeeze().numpy())  # Convert to NumPy array
 
-        return torch.tensor(embeddings)  # Return as tensor
+    return torch.tensor(embeddings)  # Return as tensor
 
-    # # Generate embeddings
-    X_train_vec = get_bert_embeddings(X_train)
-    X_val_vec = get_bert_embeddings(X_val)
+
+def bert_embeddings_split(X_train, X_val):
+    # Generate embeddings
+    X_train_vec = bert_embeddings(X_train)
+    X_val_vec = bert_embeddings(X_val)
     return X_train_vec, X_val_vec
 
 class ClassAwareVectorizer:

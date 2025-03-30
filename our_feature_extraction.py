@@ -9,31 +9,25 @@ from transformers import BertTokenizer, BertModel
 bert_tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 bert_model = BertModel.from_pretrained('bert-base-uncased')
 
-def basic_bag(X_train, X_val, ohe=False, ngram_range=(1, 1), min_refs=None, debug=False):
-    # Initialize CountVectorizer
+def basic_bag(X_train, X_val, ohe=False, ngram_range=(1, 1), min_refs=1, debug=False):
+    # Initialize CountVectorizer for words selection
     vectorizer = CountVectorizer(ngram_range=ngram_range)
     X_train_vec = vectorizer.fit_transform(X_train)
     if debug:
         print('Shape (X_train_vec): ', X_train_vec.shape)
-
     # Sum the word counts and extract vocabulary
     word_counts = np.asarray(X_train_vec.sum(axis=0)).flatten()
     vocab = np.array(vectorizer.get_feature_names_out())
 
     selected_words = []
-    if ohe:
-        if min_refs: # ohe=True, min_refs=True
-            selected_words = vocab[word_counts >= min_refs]
-            vectorizer = CountVectorizer(ngram_range=ngram_range, binary=ohe, vocabulary=selected_words)
-        else: # ohe=True, min_refs=False
-            vectorizer = CountVectorizer(ngram_range=ngram_range, binary=ohe)
-        X_train_vec = vectorizer.fit_transform(X_train)
-    elif min_refs: # ohe=False, min_refs=True
+    if min_refs > 1:  # Only filter words if min_refs > 1 is provided
         selected_words = vocab[word_counts >= min_refs]
-        vectorizer = CountVectorizer(ngram_range=ngram_range, vocabulary=selected_words)
-        X_train_vec = vectorizer.fit_transform(X_train)
-    if debug and len(selected_words) > 0:  # Only print after reduction if filtering happened
+
+    vectorizer = CountVectorizer(ngram_range=ngram_range, binary=ohe, vocabulary=selected_words if min_refs > 1 else None)
+    X_train_vec = vectorizer.fit_transform(X_train)
+    if debug and min_refs > 1:  # Only print after reduction if filtering happened
         print('Shape (X_train_vec) after reduction: ', X_train_vec.shape)
+
     X_val_vec = vectorizer.transform(X_val)
     if debug:
         print('Shape (X_val_vec): ', X_val_vec.shape)
@@ -41,9 +35,9 @@ def basic_bag(X_train, X_val, ohe=False, ngram_range=(1, 1), min_refs=None, debu
     return word_counts, vocab, selected_words, vectorizer, X_train_vec, X_val_vec
 
 
-def tf_idf(X_train, X_val, min_refs=None, ngram_range=(1, 1), debug=False):
+def tf_idf(X_train, X_val, min_refs=1, ngram_range=(1, 1), debug=False):
     "TF-IDF Vectorizer"
-    # Initialize CountVectorizer to count word/n-grams
+    # Initialize CountVectorizer for words selection
     vectorizer = CountVectorizer(ngram_range=ngram_range)
     X_train_count = vectorizer.fit_transform(X_train)
     if debug:
@@ -55,14 +49,15 @@ def tf_idf(X_train, X_val, min_refs=None, ngram_range=(1, 1), debug=False):
 
     # Filter vocabulary by minimum reference count (if provided)
     selected_words = []
-    if min_refs:
+    if min_refs > 1:
         selected_words = vocab[word_counts >= min_refs]
 
     # TF-IDF
-    tfidf_vectorizer = TfidfVectorizer(ngram_range=ngram_range, vocabulary=selected_words if min_refs else None)
+    tfidf_vectorizer = TfidfVectorizer(ngram_range=ngram_range, vocabulary=selected_words if min_refs > 1 else None)
     X_train_vec = tfidf_vectorizer.fit_transform(X_train)
-    if debug and len(selected_words):
+    if debug and min_refs > 1:
         print('Shape (X_train_vec) after reduction: ', X_train_vec.shape)
+
     X_val_vec = tfidf_vectorizer.transform(X_val)
     if debug:
         print('Shape (X_val_vec): ', X_val_vec.shape)
@@ -78,13 +73,12 @@ def generate_ngrams(text: str, n: int) -> List[str]:
     return [' '.join(tokens[i:i+n]) for i in range(len(tokens)-n+1)] if len(tokens) >= n else []
 
 # Function for Word2vec fine tuning
-def word2vec_alg(X_train, pretrained_path=None, vector_size=100, min_count=1, window=5, sg=False, epochs=30, alpha=0.025, alpha_min=0.0001, save_path=None):
+def w2v_embeddings(X_train, vector_size=100, min_count=1, window=5, sg=False, epochs=30, alpha=0.025, alpha_min=0.0001, save_path=None):
     """
     Train a Word2Vec model on the given text, optionally using a pre-trained model.
 
     Parameters:
     X_train (list of lists of str): The training data, where each sentence is represented as a list of tokens (words).
-    pretrained_path (str, optional): File path to a pre-trained Word2Vec model. If provided, the model will be fine-tuned.
     vector_size (int, default=100): The size (dimensionality) of the word vectors.
     min_count (int, default=1): Minimum frequency count for words to be included in the vocabulary.
     window (int, default=5): Maximum distance between the current and predicted word within a sentence.
@@ -93,63 +87,37 @@ def word2vec_alg(X_train, pretrained_path=None, vector_size=100, min_count=1, wi
     alpha (float, default=0.025): Initial learning rate for training.
     alpha_min (float, default=0.0001): Minimum learning rate after training.
     save_path (str, optional): If provided, the model will be saved at this path.
-
     Returns:
 
     model: The trained Word2Vec model.
     """
-
+    # Handle MWE
     X_train_list = list(X_train)
     phrases = Phrases(X_train_list, min_count=30, progress_per=10000)
     bigram = Phraser(phrases)
-    sents = bigram[X_train_list]
+    sents = list(bigram[X_train_list])
+
     cores = multiprocessing.cpu_count() # check possible cores
 
     # the Word2Vec model with major parameters
-    model = Word2Vec(vector_size=vector_size, min_count=min_count, window=window, sg=sg, workers=cores, alpha=alpha, min_alpha=alpha_min)
-
-    model.build_vocab(sents, progress_per=10000) # vocabulary from the corpus
-    total_examples = model.corpus_count  # number of examples in the corpus
-
-    # use pretrained Word2Vec model
-    if pretrained_path:
-        pretrained_model = KeyedVectors.load_word2vec_format(pretrained_path, binary=False) # upload pretrained model
-        model.build_vocab([list(pretrained_model.key_to_index.keys())], update=True)  # add words from the pretrained model to the vocabulary
-        model.wv.vectors = pretrained_model.vectors  # set the pretrained word vectors to the new model
-
-        model.wv.locked = False  # False to fine-tune the pretrained vectors
-
-    model.train(sents, total_examples=total_examples, epochs=epochs) # train the model
+    model = Word2Vec(sents, vector_size=vector_size, min_count=min_count, window=window, sg=sg, workers=cores, alpha=alpha, min_alpha=alpha_min)
 
     if save_path:
         model.save(save_path)
 
     return model
 
-def load_pretrained(path):
-    pretrained_model = KeyedVectors.load_word2vec_format(path, binary=False) # upload pretrained model
-    return pretrained_model
+def w2v_embeddings_split(X_train, X_val, model, vector_size=None):
+    vector_size = vector_size or model.vector_size
 
-def glove_embedding(X_train, X_val, model, debug=False):
     def document_vector(doc):
-        """Compute the mean word vector for a single document."""
-        vectors = [model[word] for word in doc if word in model]
-        return np.mean(vectors, axis=0) if vectors else np.zeros(model.vector_size)
-    
-    # Extract vocabulary and word counts
-    vocab = list(model.key_to_index.keys())  # No need for `.wv`
-    word_counts = [sum(1 for word in doc if word in model) for doc in X_train]
-    selected_words = vocab  # All words in model vocabulary
-    
-    # Vectorize documents
-    X_train_vec = np.array([document_vector(doc) for doc in X_train])
-    X_val_vec = np.array([document_vector(doc) for doc in X_val])
-    
-    if debug:
-        print("Shape (X_train_vec):", X_train_vec.shape)
-        print("Shape (X_val_vec):", X_val_vec.shape)
-    
-    return word_counts, vocab, selected_words, document_vector, X_train_vec, X_val_vec
+        vectors = [model.wv[word] for word in doc if word in model.wv]
+        return np.mean(vectors, axis=0) if vectors else np.zeros(vector_size)
+
+    embeddings_train = np.array([document_vector(doc) for doc in X_train])
+    embeddings_val = np.array([document_vector(doc) for doc in X_val])
+
+    return embeddings_train, embeddings_val
 
 def bert_embeddings(text_list, model=bert_model, tokenizer=bert_tokenizer):
     """Tokenize text and generate averaged BERT embeddings."""

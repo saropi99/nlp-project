@@ -1,3 +1,4 @@
+import torch
 
 def apply_kaggle_model(model, mapper, x_val, y_val):
 
@@ -19,3 +20,32 @@ def apply_kaggle_model(model, mapper, x_val, y_val):
     from sklearn.metrics import classification_report, accuracy_score
     print(classification_report(y_val, result))
     print(accuracy_score(y_val, result))
+
+def tokenize_function(examples, tokenizer):
+    result = tokenizer(examples["text"])
+    if tokenizer.is_fast:
+        result["word_ids"] = [result.word_ids(i) for i in range(len(result["input_ids"]))]
+    return result
+
+
+def tokenize_data(texts, tokenizer):
+    return tokenizer(
+        texts.tolist(),
+        truncation=True,
+        padding=True,
+        max_length=512,
+    )
+
+
+class CustomDataset(torch.utils.data.Dataset):
+    def __init__(self, encodings, labels):
+        self.encodings = encodings
+        self.labels = labels
+
+    def __getitem__(self, idx):
+        item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
+        item["labels"] = torch.tensor(self.labels[idx])
+        return item
+
+    def __len__(self):
+        return len(self.labels)

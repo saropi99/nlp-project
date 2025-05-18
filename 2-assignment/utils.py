@@ -49,3 +49,33 @@ class CustomDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.labels)
+    
+
+
+class CustomDataset1(torch.utils.data.Dataset):
+    def __init__(self, encodings, labels):
+        self.encodings = encodings
+        self.labels = labels
+        # Assuming labels are 0 or 1. If you have more classes,
+        # you'll need to adjust num_classes
+        self.num_classes = 2 # Based on your model's config.id2label
+
+    def __getitem__(self, idx):
+        item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
+        
+        # Get the original integer label (0 or 1)
+        original_label = self.labels[idx]
+        
+        # Create a one-hot encoded tensor
+        # Example: if original_label is 0, one_hot_label will be [1., 0.]
+        #          if original_label is 1, one_hot_label will be [0., 1.]
+        one_hot_label = torch.zeros(self.num_classes)
+        one_hot_label[original_label] = 1.0
+        
+        # Assign the one-hot encoded label (must be float for BCEWithLogitsLoss)
+        item["labels"] = one_hot_label.float() # Ensure it's float
+
+        return item
+
+    def __len__(self):
+        return len(self.labels)
